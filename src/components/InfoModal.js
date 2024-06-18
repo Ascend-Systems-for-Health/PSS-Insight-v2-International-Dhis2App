@@ -61,7 +61,7 @@ export default function InfoModal(props) {
   const referenceSheetLink = props.referenceSheet
     ? `${process.env.REACT_APP_SERVER_URL}/api/v1/master-template/view-file/${props.referenceSheet}`
     : `${pathname !== '/' ? origin + pathname : origin}#/indicators/indicator/${
-        props.open?.uuid
+        props.uuid
       }`;
   return (
     <Modal {...props} type='info'>

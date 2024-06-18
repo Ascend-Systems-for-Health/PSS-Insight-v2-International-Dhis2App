@@ -1,194 +1,106 @@
-import React, { useEffect, useState, useRef } from 'react';
-import Card from '../components/Card';
-import { Field, Input, TextArea } from '@dhis2/ui';
-import { Button } from 'antd';
-import {
-  createVersion,
-  getMasterIndicators,
-  getVersionDetails,
-  updateVersion,
-} from '../api/api';
-import { CheckCircleIcon, XCircleIcon } from '@heroicons/react/24/outline';
-import classes from '../App.module.css';
-import { useFormik } from 'formik';
-import * as Yup from 'yup';
-import Title from '../components/Title';
-import IndicatorStack from '../components/IndicatorStack';
-import Accordion from '../components/Accordion';
-import Loading from '../components/Loader';
-import { createUseStyles } from 'react-jss';
-import { useParams, useNavigate } from 'react-router-dom';
-import { mergeCategories, sortIndicatorsByCode } from '../utils/helpers';
-import Modal from '../components/Modal';
-import { useDataEngine } from '@dhis2/app-runtime';
-import useBenchmarks from '../hooks/useBenchmarks';
+import { CheckCircleIcon, XCircleIcon } from "@heroicons/react/24/outline";
+import { Button, Form, Input } from "antd";
+import React, { useEffect, useState } from "react";
+import { createUseStyles } from "react-jss";
+import { useNavigate, useParams } from "react-router-dom";
+import classes from "../App.module.css";
+import { createVersion, getMasterIndicators, getVersionDetails, updateVersion } from "../api/api";
+import Accordion from "../components/Accordion";
+import Card from "../components/Card";
+import IndicatorStack from "../components/IndicatorStack";
+import Loading from "../components/Loader";
+import Modal from "../components/Modal";
+import Title from "../components/Title";
+import { formatBenchmarkValues, mergeBenchmarks } from "../hooks/controllers/benchmarksController";
+import useBenchmarks from "../hooks/useBenchmarks";
+import { mergeCategories } from "../utils/helpers";
 
 const useStyles = createUseStyles({
   alertBar: {
-    position: 'fixed !important',
-    top: '3.5rem',
-    left: '50%',
-    transform: 'translateX(-50%)',
+    position: "fixed !important",
+    top: "3.5rem",
+    left: "50%",
+    transform: "translateX(-50%)",
   },
   modal: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '1rem',
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: "1rem",
   },
   hidden: {
-    display: 'none',
+    display: "none",
   },
   cardFooter: {
-    display: 'flex',
-    justifyContent: 'flex-end',
-    '& button': {
-      marginRight: '1rem',
+    display: "flex",
+    justifyContent: "flex-end",
+    "& button": {
+      marginRight: "1rem",
     },
   },
-});
-
-const validationSchema = Yup.object({
-  versionDescription: Yup.string().required('Description is required'),
 });
 
 export default function NewVersion({ user }) {
   const [loadingIndicators, setLoadingIndicators] = useState(true);
   const [indicators, setIndicators] = useState([]);
+  const [availableIndicators, setAvailableIndicators] = useState([]);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState(false);
   const [referenceSheet, setReferenceSheet] = useState(null);
+  const [selected, setSelected] = useState([]);
+  const [benchmarks, setBenchmarks] = useState([]);
 
   const { id } = useParams();
   const navigate = useNavigate();
-  const engine = useDataEngine();
 
-  const { getDataValues, saveDataValues, dataValues } = useBenchmarks();
+  const { getDataSet, saveDataValues, dataValues } = useBenchmarks();
 
-  console.log('dataValues', dataValues);
+  const isView = window.location.href.includes("view");
 
-  const isView = window.location.href.includes('view');
-
-    const queryBenchmarks = async () => {
-      try {
-      // get dataSets
-      const { data } = await engine.query({
-        data: {
-          resource: 'dataSets',
-          params: {
-            fields: 'id,name',
-            paging: false,
-            filter: 'name:ilike:Benchmark',
-          },
-        },
-      });
-
-      const { data: dataElements } = await engine.query({
-        data: {
-          resource: 'dataElements',
-          params: {
-            fields: 'id,name,displayName',
-            paging: false,
-            filter: 'name:ilike:Benchmark',
-          },
-        },
-      });
-
-      if (
-        data?.dataSets?.length > 0 &&
-        dataElements?.dataElements?.length > 0
-      ) {
-        const dataSetId = data?.dataSets[0]?.id;
-        const { data: dataValues } = await engine.query({
-          data: {
-            resource: 'dataValueSets',
-            params: {
-              orgUnit: user?.me?.organisationUnits[0]?.id,
-              period: new Date().getFullYear() - 1,
-              dataSet: dataSetId,
-              paging: false,
-              fields: 'dataElement,value,displayName',
-            },
-          },
-        });
-        const benchmarkData = dataElements?.dataElements?.map(element => {
-          const dataValue = dataValues?.dataValues?.find(
-            value => value.dataElement === element.id
-          );
-          return {
-            id: element.id,
-            name: element.displayName
-              ?.replace('Benchmark', '')
-              ?.replace('_', ''),
-            value: dataValue?.value || 0,
-          };
-        });
-        return benchmarkData;
-      }
-      return [];
-    } catch (error) {
-      return [];
-    }
-    };
+  const [form] = Form.useForm();
 
   const styles = useStyles();
-  const formik = useFormik({
-    initialValues: {
-      versionDescription: '',
-      isPublished: false,
-    },
-    validationSchema,
-    onSubmit: async values => {
-      try {
-        const indicatorValues = Object.keys(values).filter(
-          value =>
-            value &&
-            value !== 'versionName' &&
-            value !== 'versionDescription' &&
-            value !== 'isPublished'
-        );
 
-        const getSelectedIndicators = indicatorValues.filter(
-          item => values[item]
-        );
+  const onFinish = async (values) => {
+    try {
+      let response;
+      if (id) {
+        const data = {
+          versionDescription: values.versionDescription,
+          isPublished: values.isPublished,
+          publishedBy: values.isPublished ? user?.me?.username : null,
+          indicators: selected,
+        };
 
-        let response;
-        if (id) {
-          const data = {
-            versionDescription: values.versionDescription,
-            isPublished: values.isPublished,
-            publishedBy: values.isPublished ? user?.me?.username : null,
-            indicators: getSelectedIndicators,
-          };
+        response = await updateVersion(id, data);
+      } else {
+        const data = {
+          createdBy: user?.me?.username,
+          versionName: values.versionName,
+          versionDescription: values.versionDescription,
+          isPublished: values.isPublished,
+          publishedBy: values.isPublished ? user?.me?.username : null,
+          indicators: selected,
+        };
 
-          response = await updateVersion(id, data);
-        } else {
-          const data = {
-            createdBy: user?.me?.username,
-            versionName: values.versionName,
-            versionDescription: values.versionDescription,
-            isPublished: values.isPublished,
-            publishedBy: values.isPublished ? user?.me?.username : null,
-            indicators: getSelectedIndicators,
-          };
-
-          response = await createVersion(data);
-        }
-        if (response) {
-          setSuccess('Template saved successfully');
-          setError(false);
-          window.scrollTo(0, 0);
-          setTimeout(() => {
-            navigate('/templates/versions');
-          }, 1000);
-        }
-      } catch (error) {
-        setError('Oops! Something went wrong');
-        setSuccess(false);
+        response = await createVersion(data);
       }
-    },
-  });
+      const dataSet = availableIndicators?.[0]?.datasetId;
+      await saveDataValues(benchmarks, dataSet);
+      if (response) {
+        setSuccess("Template saved successfully");
+        setError(false);
+        window.scrollTo(0, 0);
+        setTimeout(() => {
+          navigate("/templates/versions");
+        }, 1000);
+      }
+    } catch (error) {
+      setError("Oops! Something went wrong");
+      setSuccess(false);
+    }
+  };
 
   const getIndicatorDetails = async () => {
     try {
@@ -198,22 +110,21 @@ export default function NewVersion({ user }) {
 
       if (data) {
         setReferenceSheet(data?.referenceSheet);
-        formik.setFieldValue('versionName', data?.versionName);
-        formik.setFieldValue('versionDescription', data?.versionDescription);
-        formik.setFieldValue('isPublished', data?.status === 'PUBLISHED');
 
-        const indicatorValues = data?.indicators?.map(indicator =>
-          indicator?.indicators?.map(indicator => indicator.categoryId)
-        );
+        form.setFieldValue("versionName", data?.versionName);
+        form.setFieldValue("versionDescription", data?.versionDescription);
+        form.setFieldValue("isPublished", data?.status === "PUBLISHED");
+
+        const indicatorValues = data?.indicators?.map((indicator) => indicator?.indicators?.map((indicator) => indicator.categoryId));
 
         const flattenedIndicators = indicatorValues?.flat();
-        flattenedIndicators.forEach(indicator => {
-          formik.setFieldValue(indicator, indicator);
-        });
+
+        setSelected(flattenedIndicators);
+
         setLoadingIndicators(false);
       }
     } catch (error) {
-      setError('Oops! Something went wrong');
+      setError("Oops! Something went wrong");
       setLoadingIndicators(false);
     }
   };
@@ -221,7 +132,6 @@ export default function NewVersion({ user }) {
   const getIndicators = async () => {
     try {
       setLoadingIndicators(true);
-      await queryBenchmarks();
       const res = await getMasterIndicators();
 
       const data = mergeCategories(res);
@@ -229,22 +139,34 @@ export default function NewVersion({ user }) {
       setIndicators(data);
       setLoadingIndicators(false);
     } catch (error) {
-      setError('Error loading indicators');
+      setError("Error loading indicators");
       setLoadingIndicators(false);
     }
   };
 
   useEffect(() => {
     getIndicators();
+    getDataSet();
     if (id) {
       getIndicatorDetails();
     }
-    if (!id) formik.resetForm();
+    if (!id) {
+      form.resetFields();
+      setSelected([]);
+    }
   }, [id]);
 
   useEffect(() => {
+    if (dataValues && indicators) {
+      const mergedIndicators = mergeBenchmarks(indicators, dataValues);
+      setBenchmarks(formatBenchmarkValues({}, mergedIndicators));
+      setAvailableIndicators(mergedIndicators);
+    }
+  }, [dataValues, indicators]);
+
+  useEffect(() => {
     if (success) {
-      formik.resetForm();
+      form.resetFields();
       const successTimeout = setTimeout(() => {
         setSuccess(false);
       }, 3000);
@@ -253,45 +175,52 @@ export default function NewVersion({ user }) {
     }
   }, [success]);
 
-  useEffect(() => {
-    if (formik.errors.versionDescription && formik.touched.versionDescription) {
-      const descriptionRef = document.getElementById('versionDescription');
-      descriptionRef.scrollIntoView({ behavior: 'smooth' });
-      descriptionRef.focus();
-    }
-  }, [formik.errors.versionDescription, formik.touched.versionDescription]);
+  const handleCancel = () => {
+    form.resetFields();
+    navigate("/templates/versions");
+  };
+
+  const handleSubmit = () => {
+    form
+      .validateFields()
+      .then(() => {
+        form.submit();
+      })
+      .catch((errorInfo) => {
+        const error = errorInfo.errorFields[0].name[0];
+        const element = document.getElementById(error);
+        element.scrollIntoView({ behavior: "smooth" });
+      });
+  };
 
   const footer = (
     <div className={styles.cardFooter}>
-      <Button
-        name='Small button'
-        onClick={formik.handleReset}
-        small
-        value='default'
-        className={classes.btnCancel}
-      >
+      <Button name='Small button' onClick={handleCancel} small value='default' className={classes.btnCancel}>
         Cancel
       </Button>
       <Button
         name='Small Primary button'
         onClick={() => {
-          formik.setFieldValue('isPublished', true);
-          formik.handleSubmit();
+          form.setFieldValue("isPublished", true);
+          handleSubmit();
         }}
         small
         value='default'
         className={classes.btnPublish}
-        loading={formik.isSubmitting && formik.values.isPublished}
+        disabled={selected.length === 0}
       >
         Publish template
       </Button>
       <Button
         name='Small button'
-        onClick={formik.handleSubmit}
+        onClick={() => {
+          form.setFieldValue("isPublished", false);
+          handleSubmit();
+        }}
         small
         value='default'
         className={classes.btnSuccess}
-        loading={formik.isSubmitting && !formik.values.isPublished}
+        disabled={selected.length === 0}
       >
         Save
       </Button>
@@ -301,13 +230,7 @@ export default function NewVersion({ user }) {
   return (
     <Card title='CREATE A VERSION' footer={isView ? null : footer}>
       {success && (
-        <Modal
-          open={success}
-          type='success'
-          onCancel={() => setSuccess(false)}
-          title='Success'
-          footer={null}
-        >
+        <Modal open={success} type='success' onCancel={() => setSuccess(false)} title='Success' footer={null}>
           <div className={styles.modal}>
             <CheckCircleIcon className={classes.iconSuccess} />
             {success}
@@ -316,13 +239,7 @@ export default function NewVersion({ user }) {
       )}
 
       {error && (
-        <Modal
-          open={error}
-          type='error'
-          onCancel={() => setError(false)}
-          title='Error'
-          footer={null}
-        >
+        <Modal open={error} type='error' onCancel={() => setError(false)} title='Error' footer={null}>
           <div className={styles.modal}>
             <XCircleIcon className={classes.iconError} />
             {error}
@@ -330,84 +247,40 @@ export default function NewVersion({ user }) {
         </Modal>
       )}
 
-      <form className={classes.formGrid}>
-        <Field
-          label='Version Number'
-          validationText={
-            formik.errors.versionName && formik.touched.versionName
-              ? formik.errors.versionName
-              : null
-          }
-          error={formik.errors.versionName && formik.touched.versionName}
-          className={styles.hidden}
-        >
-          <Input
-            name='versionName'
-            onChange={({ value }) => formik.setFieldValue('versionName', value)}
-            placeholder='Version number'
-            disabled
-            value={formik.values.versionName}
-            error={formik.errors.versionName && formik.touched.versionName}
-          />
-        </Field>
+      <Form layout='vertical' form={form} onFinish={onFinish}>
+        <Form.Item label='Version Number' className={styles.hidden} name='versionName'>
+          <Input placeholder='Version number' disabled />
+        </Form.Item>
 
-        <Field
-          label='Description'
-          required
-          error={
-            formik.errors.versionDescription &&
-            formik.touched.versionDescription
-          }
-          validationText={
-            formik.errors.versionDescription &&
-            formik.touched.versionDescription
-              ? formik.errors.versionDescription
-              : null
-          }
-        >
-          <TextArea
-            name='versionDescription'
-            id='versionDescription'
-            onChange={({ value }) =>
-              formik.setFieldValue('versionDescription', value)
-            }
-            disabled={isView}
-            placeholder='Description'
-            rows={3}
-            required
-            value={formik.values.versionDescription}
-            error={
-              formik.errors.versionDescription &&
-              formik.touched.versionDescription
-            }
-          />
-        </Field>
-      </form>
+        <Form.Item name='isPublished' className={styles.hidden}>
+          <Input type='checkbox' />
+        </Form.Item>
+
+        <Form.Item name='versionDescription' label='Description' rules={[{ required: true, message: "Description is required" }]}>
+          <Input.TextArea id='versionDescription' disabled={isView} placeholder='Description' rows={3} />
+        </Form.Item>
+      </Form>
       <div className={classes.indicatorsSelect}>
         <Title text='SELECT INDICATORS TO ADD' />
         {loadingIndicators ? (
           <Loading type='skeleton' />
         ) : (
           <div className={classes.indicators}>
-            {indicators?.map(indicator => (
-              <Accordion
-                key={indicator.categoryName}
-                title={indicator.categoryName}
-              >
-                {sortIndicatorsByCode(indicator.indicators).map(indicator => (
-                  <IndicatorStack
-                    disabled={isView}
-                    key={indicator.id}
-                    indicator={indicator}
-                    onChange={() => {}}
-                    formik={formik}
-                    isView={isView}
-                    referenceSheet={referenceSheet}
-                    benchmarks={dataValues}
-                    saveBenchmark={saveDataValues}
-                    orgUnit={user?.me?.organisationUnits[0]?.id}
-                  />
-                ))}
+            {availableIndicators?.map((indicator) => (
+              <Accordion key={indicator.categoryName} title={indicator.categoryName}>
+                <IndicatorStack
+                  disabled={isView}
+                  selected={selected}
+                  setSelected={setSelected}
+                  key={indicator.id}
+                  indicator={indicator}
+                  isView={isView}
+                  referenceSheet={referenceSheet}
+                  benchmarks={benchmarks}
+                  setBenchmarks={setBenchmarks}
+                  saveBenchmark={saveDataValues}
+                  orgUnit={user?.me?.organisationUnits[0]?.id}
+                />
               </Accordion>
             ))}
           </div>
