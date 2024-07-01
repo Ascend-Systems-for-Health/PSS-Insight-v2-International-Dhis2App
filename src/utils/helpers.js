@@ -1,5 +1,5 @@
 export const sortIndicators = (indicators, key) => {
-  return indicators.sort((a, b) => {
+  return indicators?.sort((a, b) => {
     if (a[key] < b[key]) {
       return -1;
     }
@@ -10,15 +10,12 @@ export const sortIndicators = (indicators, key) => {
   });
 };
 
-export const sortIndicatorsByCode = (indicators) => {
-  return indicators?.sort((a, b) => {
-    const aCode = a.indicatorDataValue?.[0]?.code;
-    const bCode = b.indicatorDataValue?.[0]?.code;
+export const sortIndicatorsByKey = (indicators) => {
+  const sortedIndicators = sortIndicators(indicators, "categoryName");
 
-    if (aCode === undefined) return 1;
-    if (bCode === undefined) return -1;
-
-    return aCode.localeCompare(bCode);
+  return sortedIndicators?.map((indicator) => {
+    const sortedDataValues = sortIndicators(indicator.indicatorDataValue, "code");
+    return { ...indicator, indicatorDataValue: sortedDataValues };
   });
 };
 

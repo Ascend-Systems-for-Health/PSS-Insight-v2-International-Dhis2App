@@ -1,4 +1,4 @@
-import { sortIndicatorsByCode } from "../../utils/helpers";
+import { sortIndicatorsByKey } from "../../utils/helpers";
 
 const removeBenchmark = (str) => str.replace(/_?benchmark_?/gi, "");
 
@@ -26,9 +26,15 @@ export const mapDataElementsToValues = (dataElements, dataValues) => {
 
 export const mergeBenchmarks = (indicators, benchmarks) => {
   return indicators?.map((indicator) => {
-    const sortedIndicators = sortIndicatorsByCode(indicator?.indicators);
+    let sortedIndicators = sortIndicatorsByKey(indicator?.indicators);
+    sortedIndicators = sortedIndicators.map((item) => {
+      const benchmark = benchmarks.find((b) => b.name === item?.categoryName);
+      return { ...item, benchmark: benchmark?.value || 0, benchmarkId: benchmark?.id, datasetId: benchmark?.datasetId };
+    });
+
     const indicatorElement = sortedIndicators[0];
     const benchmark = benchmarks.find((b) => b.name === indicatorElement?.categoryName);
+
     return {
       ...indicator,
       code: indicatorElement?.categoryName,

@@ -41,7 +41,7 @@ const useStyles = createUseStyles({
     display: "flex",
     justifyContent: "center",
     alignItems: "center",
-    height: "100%",
+    height: "calc(100% - 40px)",
   },
   tableFlex: {
     display: "flex",
@@ -66,76 +66,91 @@ export default function IndicatorStack({ indicator, disabled, referenceSheet, se
   const [editModal, setEditModal] = useState(null);
   const [infoModal, setInfoModal] = useState(null);
 
-  const columns = [
+  const columns = (code, name) => [
     {
-      title: indicator.code || "",
-      dataIndex: "categoryName",
-      key: "categoryName",
+      title: code || "",
+      dataIndex: "code",
+      key: "code",
     },
     {
-      title: indicator.categoryName || "",
-      dataIndex: "indicatorName",
-      key: "indicatorName",
+      title: name || "",
+      dataIndex: "name",
+      key: "name",
     },
   ];
+  console.log();
 
   return (
-    <div className={classes.indicatorStack}>
-      <div className={classes.indicatorCheckbox}>
-        <Checkbox
-          disabled={disabled}
-          checked={selected?.includes(indicator.id)}
-          onChange={({ checked }) => {
-            if (checked) {
-              setSelected([...selected, indicator.id]);
-            } else {
-              setSelected(selected.filter((id) => id !== indicator.id));
-            }
-          }}
-        />
-      </div>
-      <div className={classes.indicatorTable}>
-        {<Table columns={columns} dataSource={indicator.indicators} bordered size='small' pagination={false} />}
-      </div>
-      <div>
-        <div className={classes.benchmarkHeader}>
-          <div className={classes.tableFlex}>
-            <span>Benchmark</span>
-            <ExclamationCircleIcon className={classes.info} onClick={() => setInfoModal(indicator)} />
+    <>
+      {indicator?.indicators?.map((item) => {
+        return (
+          <div className={classes.indicatorStack}>
+            <div className={classes.indicatorCheckbox}>
+              <Checkbox
+                disabled={disabled}
+                checked={selected?.includes(item.categoryId)}
+                onChange={({ checked }) => {
+                  if (checked) {
+                    setSelected([...selected, item.categoryId]);
+                  } else {
+                    setSelected(selected.filter((id) => id !== item.categoryId));
+                  }
+                }}
+              />
+            </div>
+            <div className={classes.indicatorTable}>
+              {
+                <Table
+                  columns={columns(item?.categoryName, item?.indicatorName)}
+                  dataSource={item.indicatorDataValue}
+                  bordered
+                  size='small'
+                  pagination={false}
+                />
+              }
+            </div>
+            <div>
+              <div className={classes.benchmarkHeader}>
+                <div className={classes.tableFlex}>
+                  <span>Benchmark</span>
+                  <ExclamationCircleIcon className={classes.info} onClick={() => setInfoModal(item)} />
+                </div>
+              </div>
+              <div className={classes.benchmarkContent}>
+                <InputNumber
+                  disabled={disabled}
+                  defaultValue={item.benchmark}
+                  onBlur={(e) => {
+                    setBenchmarks((prev) => {
+                      const index = prev.findIndex((b) => b.dataElement === item.benchmarkId);
+                      prev[index].value = Number(e.target.value);
+                      return [...prev];
+                    });
+                  }}
+                />
+              </div>
+            </div>
+            <EditModal
+              key={editModal?.categoryId || editModal?.id}
+              title='EDIT INSTANCE'
+              onCancel={() => setEditModal(null)}
+              open={editModal}
+              type='info'
+              onOk={() => setEditModal(null)}
+            />
+            <InfoModal
+              key={infoModal?.id}
+              title={`${infoModal?.code || ""} DEFINITION`}
+              onCancel={() => setInfoModal(null)}
+              open={infoModal}
+              type='info'
+              footer={null}
+              uuid={indicator.uuid}
+              referenceSheet={referenceSheet}
+            />
           </div>
-        </div>
-        <div className={classes.benchmarkContent}>
-          <InputNumber
-            disabled={disabled}
-            defaultValue={indicator.benchmark}
-            onBlur={(e) => {
-              setBenchmarks((prev) => {
-                const index = prev.findIndex((b) => b.dataElement === indicator.benchmarkId);
-                prev[index].value = Number(e.target.value);
-                return [...prev];
-              });
-            }}
-          />
-        </div>
-      </div>
-      <EditModal
-        key={editModal?.categoryId || editModal?.id}
-        title='EDIT INSTANCE'
-        onCancel={() => setEditModal(null)}
-        open={editModal}
-        type='info'
-        onOk={() => setEditModal(null)}
-      />
-      <InfoModal
-        key={infoModal?.id}
-        title={`${infoModal?.code || ""} DEFINITION`}
-        onCancel={() => setInfoModal(null)}
-        open={infoModal}
-        type='info'
-        footer={null}
-        uuid={indicator.uuid}
-        referenceSheet={referenceSheet}
-      />
-    </div>
+        );
+      })}
+    </>
   );
 }
